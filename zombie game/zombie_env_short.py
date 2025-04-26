@@ -3,80 +3,158 @@ import pygame
 import gymnasium as gym
 from gymnasium import spaces
 import time
+import os
 
 class ZombieEnvironment(gym.Env):
     def __init__(self, grid_size=8):
         super(ZombieEnvironment, self).__init__()
         
         self.grid_size = grid_size
-        self.window_size = 800  # Increased window size
-        self.cell_size = (self.window_size - 200) // self.grid_size  # Adjust for sidebar
+        self.window_size = 800
+        self.cell_size = (self.window_size - 200) // self.grid_size
         
         # Action space: 0: up, 1: right, 2: down, 3: left, 4: attack
         self.action_space = spaces.Discrete(5)
         
-        # Observation space: grid_size x grid_size x 5 (player, zombie1, zombie10, zombie100, exit)
+        # Observation space: grid_size x grid_size x 6 (player, zombie1, zombie10, zombie100, exit, walls)
         self.observation_space = spaces.Box(
             low=0, high=1,
-            shape=(self.grid_size, self.grid_size, 5),
+            shape=(self.grid_size, self.grid_size, 6),
             dtype=np.float32
         )
         
         # Initialize Pygame
         pygame.init()
         self.screen = pygame.display.set_mode((self.window_size, self.window_size))
-        pygame.display.set_caption("Zombie Soldier RL")
+        pygame.display.set_caption("Castle Warrior RL")
         
         # Initialize fonts
         self.font = pygame.font.Font(None, 24)
         self.title_font = pygame.font.Font(None, 36)
         
         # Movement delay (in seconds)
-        self.delay = 1.0  # Increased delay for better visualization
+        self.delay = 0.001  # Much faster movement
         
         # Colors
         self.COLORS = {
-            'background': (255, 255, 255),
-            'grid': (200, 200, 200),
-            'player': (0, 0, 255),
-            'zombie1': (100, 100, 100),
-            'zombie10': (150, 0, 0),
-            'zombie100': (200, 0, 0),
-            'exit': (0, 255, 0),
+            'background': (200, 200, 200),  # Stone gray
+            'grid': (150, 150, 150),        # Darker stone
+            'player': (255, 215, 0),        # Gold
+            'zombie1': (100, 100, 100),     # Stone zombie
+            'zombie10': (150, 0, 0),        # Blood zombie
+            'zombie100': (200, 0, 0),       # Demon zombie
+            'exit': (139, 69, 19),          # Brown castle door
+            'wall': (50, 50, 50),           # Dark gray for walls
             'text': (0, 0, 0),
-            'sidebar': (240, 240, 240)
+            'sidebar': (220, 220, 220)      # Light stone
         }
+        
+        # Fixed positions for zombies and exit
+        self.fixed_zombie_positions = [
+            (2, 2),  # Level 1 zombie
+            (5, 5),  # Level 10 zombie
+            (1, 6)   # Level 100 zombie
+        ]
+        self.fixed_exit_pos = (6, 1)
+        
+        # Load images
+        self.load_images()
+        
+        self.reset()
+    
+    def load_images(self):
+        # Create assets directory if it doesn't exist
+        if not os.path.exists('assets'):
+            os.makedirs('assets')
+        
+        # Try to load images, if they don't exist, create placeholders
+        try:
+            self.warrior_img = pygame.image.load('assets/warrior.png')
+            self.warrior_img = pygame.transform.scale(self.warrior_img, (self.cell_size - 4, self.cell_size - 4))
+        except:
+            # Create a placeholder warrior icon
+            self.warrior_img = pygame.Surface((self.cell_size - 4, self.cell_size - 4))
+            self.warrior_img.fill(self.COLORS['player'])
+            pygame.draw.rect(self.warrior_img, (0, 0, 0), (0, 0, self.cell_size - 4, self.cell_size - 4), 2)
+        
+        try:
+            self.zombie1_img = pygame.image.load('assets/zombie1.png')
+            self.zombie1_img = pygame.transform.scale(self.zombie1_img, (self.cell_size - 4, self.cell_size - 4))
+        except:
+            self.zombie1_img = pygame.Surface((self.cell_size - 4, self.cell_size - 4))
+            self.zombie1_img.fill(self.COLORS['zombie1'])
+        
+        try:
+            self.zombie10_img = pygame.image.load('assets/zombie10.png')
+            self.zombie10_img = pygame.transform.scale(self.zombie10_img, (self.cell_size - 4, self.cell_size - 4))
+        except:
+            self.zombie10_img = pygame.Surface((self.cell_size - 4, self.cell_size - 4))
+            self.zombie10_img.fill(self.COLORS['zombie10'])
+        
+        try:
+            self.zombie100_img = pygame.image.load('assets/zombie100.png')
+            self.zombie100_img = pygame.transform.scale(self.zombie100_img, (self.cell_size - 4, self.cell_size - 4))
+        except:
+            self.zombie100_img = pygame.Surface((self.cell_size - 4, self.cell_size - 4))
+            self.zombie100_img.fill(self.COLORS['zombie100'])
+        
+        try:
+            self.exit_img = pygame.image.load('assets/castle_door.png')
+            self.exit_img = pygame.transform.scale(self.exit_img, (self.cell_size - 4, self.cell_size - 4))
+        except:
+            self.exit_img = pygame.Surface((self.cell_size - 4, self.cell_size - 4))
+            self.exit_img.fill(self.COLORS['exit'])
         
         self.reset()
     
     def reset(self, seed=None):
         super().reset(seed=seed)
         
-        # Initialize state
-        self.state = np.zeros((self.grid_size, self.grid_size, 5))
+        # Initialize state with an extra channel for walls
+        self.state = np.zeros((self.grid_size, self.grid_size, 6))
         
-        # Place player randomly
-        self.player_pos = self._get_random_position()
-        self.state[self.player_pos[0], self.player_pos[1], 0] = 1
+        # Create a maze-like structure with walls
+        # Fixed positions that should not have walls
+        protected_positions = [
+            (0, 0),  # Player
+            (0, self.grid_size-1),  # L1 zombie
+            (self.grid_size-1, self.grid_size-1),  # L10 zombie
+            (self.grid_size-1, 0),  # L100 zombie
+            (self.grid_size//2, self.grid_size//2)  # Exit
+        ]
         
-        # Place zombies randomly (ensuring they're not on the player or each other)
+        # Create walls in a maze-like pattern
+        for i in range(self.grid_size):
+            for j in range(self.grid_size):
+                # Don't place walls on protected positions
+                if (i, j) not in protected_positions:
+                    # Create walls in a pattern that allows paths but creates challenges
+                    if (i % 2 == 0 and j % 3 == 0) or (i % 3 == 0 and j % 2 == 0):
+                        self.state[i, j, 5] = 1  # Place wall
+        
+        # Fixed positions
+        self.player_pos = (0, 0)  # Upper left
+        self.state[0, 0, 0] = 1  # Player
+        
+        # Place zombies at fixed positions
         self.zombie_positions = []
         self.zombie_levels = [1, 10, 100]
         self.alive_zombies = [True, True, True]  # Track which zombies are still alive
         
-        for i in range(3):
-            while True:
-                pos = self._get_random_position()
-                if not self._is_position_occupied(pos):
-                    self.zombie_positions.append(pos)
-                    self.state[pos[0], pos[1], i + 1] = 1
-                    break
+        # Level 1 zombie in upper right
+        self.zombie_positions.append((0, self.grid_size-1))
+        self.state[0, self.grid_size-1, 1] = 1
         
-        # Initialize exit position (will be revealed later)
-        while True:
-            self.exit_pos = self._get_random_position()
-            if not self._is_position_occupied(self.exit_pos):
-                break
+        # Level 10 zombie in lower right
+        self.zombie_positions.append((self.grid_size-1, self.grid_size-1))
+        self.state[self.grid_size-1, self.grid_size-1, 2] = 1
+        
+        # Level 100 zombie in lower left
+        self.zombie_positions.append((self.grid_size-1, 0))
+        self.state[self.grid_size-1, 0, 3] = 1
+        
+        # Set fixed exit position in middle
+        self.exit_pos = (self.grid_size//2, self.grid_size//2)
         
         self.exit_revealed = False
         self.steps = 0
@@ -90,6 +168,7 @@ class ZombieEnvironment(gym.Env):
         )
     
     def _is_position_occupied(self, pos):
+        # Check all channels including walls
         return np.any(self.state[pos[0], pos[1]] == 1)
     
     def _manhattan_distance(self, pos1, pos2):
@@ -116,12 +195,19 @@ class ZombieEnvironment(gym.Env):
             elif action == 3:  # left
                 new_pos[1] = max(0, old_pos[1] - 1)
             
-            # Check if new position is valid (not occupied by zombie)
+            # Check if new position is valid (not occupied by zombie or wall)
             can_move = True
-            for i, (pos, alive) in enumerate(zip(self.zombie_positions, self.alive_zombies)):
-                if tuple(new_pos) == pos and alive:
-                    can_move = False
-                    break
+            # Check for walls
+            if self.state[new_pos[0], new_pos[1], 5] == 1:
+                can_move = False
+                reward -= 1  # Penalty for hitting wall
+            
+            # Check for zombies
+            if can_move:
+                for i, (pos, alive) in enumerate(zip(self.zombie_positions, self.alive_zombies)):
+                    if tuple(new_pos) == pos and alive:
+                        can_move = False
+                        break
             
             if can_move:
                 # Update player position
@@ -184,64 +270,77 @@ class ZombieEnvironment(gym.Env):
         return self.state, reward, done, False, info
     
     def render(self, info=None):
-        # Fill background
+        # Fill background with stone texture
         self.screen.fill(self.COLORS['background'])
         
-        # Draw sidebar
+        # Draw castle grid lines
+        for i in range(self.grid_size + 1):
+            pygame.draw.line(self.screen, self.COLORS['grid'],
+                           (0, i * self.cell_size),
+                           (self.window_size - 200, i * self.cell_size), 3)
+            pygame.draw.line(self.screen, self.COLORS['grid'],
+                           (i * self.cell_size, 0),
+                           (i * self.cell_size, self.window_size), 3)
+        
+        # Draw walls
+        for i in range(self.grid_size):
+            for j in range(self.grid_size):
+                if self.state[i, j, 5] == 1:  # Wall
+                    wall_rect = pygame.Rect(
+                        j * self.cell_size,
+                        i * self.cell_size,
+                        self.cell_size,
+                        self.cell_size
+                    )
+                    pygame.draw.rect(self.screen, self.COLORS['wall'], wall_rect)
+        
+        # Draw sidebar with stone texture
         sidebar_rect = pygame.Rect(self.window_size - 200, 0, 200, self.window_size)
         pygame.draw.rect(self.screen, self.COLORS['sidebar'], sidebar_rect)
         
-        # Draw game area
-        game_area = pygame.Rect(0, 0, self.window_size - 200, self.window_size)
-        pygame.draw.rect(self.screen, self.COLORS['background'], game_area)
-        
-        # Draw grid lines
-        for i in range(self.grid_size):
-            pygame.draw.line(self.screen, self.COLORS['grid'],
-                           (0, i * self.cell_size),
-                           (self.window_size - 200, i * self.cell_size))
-            pygame.draw.line(self.screen, self.COLORS['grid'],
-                           (i * self.cell_size, 0),
-                           (i * self.cell_size, self.window_size))
-        
         # Draw exit if revealed
         if self.exit_revealed:
-            exit_center = (self.exit_pos[1] * self.cell_size + self.cell_size // 2,
-                         self.exit_pos[0] * self.cell_size + self.cell_size // 2)
-            pygame.draw.rect(self.screen, self.COLORS['exit'],
-                           (self.exit_pos[1] * self.cell_size + 5,
-                            self.exit_pos[0] * self.cell_size + 5,
-                            self.cell_size - 10, self.cell_size - 10))
-            exit_text = self.font.render("EXIT", True, self.COLORS['text'])
-            text_rect = exit_text.get_rect(center=exit_center)
-            self.screen.blit(exit_text, text_rect)
+            exit_rect = pygame.Rect(
+                self.exit_pos[1] * self.cell_size + 2,
+                self.exit_pos[0] * self.cell_size + 2,
+                self.cell_size - 4,
+                self.cell_size - 4
+            )
+            self.screen.blit(self.exit_img, exit_rect)
         
-        # Draw player
-        pygame.draw.circle(self.screen, self.COLORS['player'],
-                         (self.player_pos[1] * self.cell_size + self.cell_size // 2,
-                          self.player_pos[0] * self.cell_size + self.cell_size // 2),
-                         self.cell_size // 3)
+        # Draw warrior
+        warrior_rect = pygame.Rect(
+            self.player_pos[1] * self.cell_size + 2,
+            self.player_pos[0] * self.cell_size + 2,
+            self.cell_size - 4,
+            self.cell_size - 4
+        )
+        self.screen.blit(self.warrior_img, warrior_rect)
         
-        # Draw zombies with level indicators
-        zombie_colors = [self.COLORS['zombie1'], self.COLORS['zombie10'], self.COLORS['zombie100']]
+        # Draw zombies with their respective icons
+        zombie_images = [self.zombie1_img, self.zombie10_img, self.zombie100_img]
         for i, (pos, alive) in enumerate(zip(self.zombie_positions, self.alive_zombies)):
             if alive:
-                # Draw zombie
-                pygame.draw.rect(self.screen, zombie_colors[i],
-                               (pos[1] * self.cell_size + self.cell_size // 4,
-                                pos[0] * self.cell_size + self.cell_size // 4,
-                                self.cell_size // 2, self.cell_size // 2))
+                zombie_rect = pygame.Rect(
+                    pos[1] * self.cell_size + 2,
+                    pos[0] * self.cell_size + 2,
+                    self.cell_size - 4,
+                    self.cell_size - 4
+                )
+                self.screen.blit(zombie_images[i], zombie_rect)
                 
                 # Draw level indicator
                 level_text = self.font.render(f"L{self.zombie_levels[i]}", True, self.COLORS['text'])
-                text_rect = level_text.get_rect(center=(pos[1] * self.cell_size + self.cell_size // 2,
-                                                      pos[0] * self.cell_size + self.cell_size // 2))
+                text_rect = level_text.get_rect(center=(
+                    pos[1] * self.cell_size + self.cell_size // 2,
+                    pos[0] * self.cell_size - 15
+                ))
                 self.screen.blit(level_text, text_rect)
         
         # Draw sidebar information
         y_offset = 20
         # Title
-        title = self.title_font.render("Game Status", True, self.COLORS['text'])
+        title = self.title_font.render("Castle Status", True, self.COLORS['text'])
         self.screen.blit(title, (self.window_size - 190, y_offset))
         
         y_offset += 50
@@ -251,27 +350,8 @@ class ZombieEnvironment(gym.Env):
         
         y_offset += 30
         # Total Reward
-        reward_text = self.font.render(f"Total Reward: {self.total_reward:.1f}", True, self.COLORS['text'])
+        reward_text = self.font.render(f"Gold: {self.total_reward}", True, self.COLORS['text'])
         self.screen.blit(reward_text, (self.window_size - 190, y_offset))
-        
-        y_offset += 50
-        # Zombie Status
-        status_title = self.font.render("Zombies Remaining:", True, self.COLORS['text'])
-        self.screen.blit(status_title, (self.window_size - 190, y_offset))
-        
-        for i, alive in enumerate(self.alive_zombies):
-            y_offset += 25
-            status = "Alive" if alive else "Defeated"
-            color = self.COLORS['text'] if alive else (100, 100, 100)
-            zombie_text = self.font.render(f"Level {self.zombie_levels[i]}: {status}", True, color)
-            self.screen.blit(zombie_text, (self.window_size - 190, y_offset))
-        
-        # Last action
-        if info and "action" in info:
-            y_offset += 50
-            action_names = ["Up", "Right", "Down", "Left", "Attack"]
-            action_text = self.font.render(f"Action: {action_names[info['action']]}", True, self.COLORS['text'])
-            self.screen.blit(action_text, (self.window_size - 190, y_offset))
         
         pygame.display.flip()
     

@@ -1,66 +1,80 @@
-# Zombie Soldier Reinforcement Learning Project
+# Zombie Game - Reinforcement Learning Project
 
-This project implements a Q-learning agent that learns to navigate a grid world as a soldier fighting zombies. The soldier must defeat zombies in a specific order (level 1, then level 10, then level 100) to win the game.
+A reinforcement learning project where an agent learns to navigate a maze, defeat zombies in the correct order, and reach the exit.
 
-## Environment Description
+## Project Structure
 
-- The environment is a grid world where the soldier (agent) must navigate and defeat zombies
-- There are three zombies with different levels (1, 10, 100)
-- The soldier must defeat the zombies in ascending order of their levels
-- Attempting to attack a higher-level zombie before defeating lower-level zombies results in a penalty
+- `zombie_env_short.py`: The game environment implementation
+- `q_learning_agent.py`: Q-learning agent implementation
+- `train_q_learning.py`: Training script
+- `assets/`: Directory containing game sprites
+- `q_table.npy`: Saved Q-table from training
 
-### Actions
-- 0: Move Up
-- 1: Move Right
-- 2: Move Down
-- 3: Move Left
-- 4: Attack
+## Environment Details
 
-### Rewards
-- Defeating level 1 zombie: +1
-- Defeating level 10 zombie: +10
-- Defeating level 100 zombie: +100
-- Winning the game (defeating all zombies in order): +1000
-- Invalid attack (wrong order): -50
-- Each step: -0.1
+The game environment features:
+- 8x8 grid world
+- Fixed positions for all entities:
+  - Warrior (player) starts in upper left
+  - Level 1 zombie in upper right
+  - Level 10 zombie in lower right
+  - Level 100 zombie in lower left
+  - Exit door in the middle
+- Maze-like wall structure
+- Fast movement speed for quick training
 
-## Installation
+## Requirements
 
-1. Create a virtual environment (recommended):
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
+- Python 3.x
+- Required packages:
+  - numpy
+  - pygame
+  - gymnasium
 
-2. Install requirements:
+Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-## Running the Project
+## Training the Agent
 
-To train the agent:
+To train the Q-learning agent:
 ```bash
-python train.py
+python train_q_learning.py
 ```
 
-The training script will:
-1. Create the environment and Q-learning agent
-2. Train for 1000 episodes by default
-3. Display progress every 100 episodes
-4. Show a plot of rewards and episode lengths at the end
+Training parameters:
+- 5000 maximum episodes
+- Early stopping if reward > 5000
+- Progress updates every 5 episodes
+- Model saved when new best reward achieved
+- 200 steps maximum per episode
 
-## Visualization
+## How to Play
 
-The environment uses Pygame for visualization:
-- Green circle: Player (soldier)
-- Gray square: Level 1 zombie
-- Dark red square: Level 10 zombie
-- Bright red square: Level 100 zombie
+1. Run the training script
+2. Watch the agent learn to:
+   - Navigate the maze
+   - Defeat zombies in order (L1 → L10 → L100)
+   - Reach the exit
+3. The agent's performance improves over time as it learns optimal strategies
 
-## Project Structure
+## Key Features
 
-- `zombie_env.py`: Contains the main environment implementation
-- `q_learning_agent.py`: Implements the Q-learning agent
-- `train.py`: Main script for training the agent
-- `requirements.txt`: List of required Python packages 
+- Q-learning implementation
+- Fixed entity positions for consistent learning
+- Maze-like wall structure
+- Fast movement speed
+- Visual rendering of the game
+- Progress tracking and model saving
+
+## Notes
+
+- The agent learns through trial and error
+- Rewards are given for:
+  - Moving towards target zombie (+5)
+  - Moving towards exit (+10)
+  - Killing zombies (L1: +20, L10: +200, L100: +2000)
+  - Killing all zombies (+500)
+  - Reaching exit (+5000)
+  - Penalties for hitting walls (-1) and wrong zombie order (-200) 
